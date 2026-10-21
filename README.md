@@ -1,5 +1,8 @@
 # reduce-ai-flavor · 去 AI 味
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+
 > 更适合中国大学生宝宝体质的去 AI 味 skill —— 让你的报告不再漏洞百出。
 
 把 AI 参与过的学生文档改到**看不出是 AI 做的**。覆盖实验记录本、实验报告、实习报告、课程论文、读书报告、文献综述、开题报告、毕业论文、实验问答题、汇报与答辩讲稿 —— 凡是署名交给老师、助教或答辩委员会的东西。
@@ -155,4 +158,6 @@ Python 3.9+，无 pip 依赖。
 
 ## License
 
-未指定。
+[MIT](LICENSE) © 2026 y9mkvfmm72-tech
+
+可自由使用、修改、分发、商用，保留版权声明即可。
