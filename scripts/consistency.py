@@ -35,7 +35,8 @@ try:
     from docx import Document
     from docx.oxml.ns import qn
 except ImportError:
-    Document = None
+    # Offline / locked-down Python: stdlib reader, same surface.
+    from docxfallback import Document, qn
 
 INVISIBLE = "\u2060\u200b\u200c\u200d\u200e\u200f\ufeff"
 GREEK_RE = re.compile(r"[\u0391-\u03a9\u03b1-\u03c9]")

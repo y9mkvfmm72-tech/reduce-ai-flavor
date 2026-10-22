@@ -27,7 +27,8 @@ sys.path.insert(0, HERE)
 try:
     from docx import Document
 except ImportError:
-    Document = None
+    # Offline / locked-down Python: stdlib reader, same surface.
+    from docxfallback import Document
 
 
 def norm(t):

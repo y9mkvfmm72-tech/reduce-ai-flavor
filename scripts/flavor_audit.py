@@ -49,11 +49,21 @@ import re
 import statistics
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
 try:
     from docx import Document
     from docx.oxml.ns import qn
+    HAVE_PYTHON_DOCX = True
 except ImportError:
-    Document = None
+    # No python-docx (offline machine / locked-down Python): fall back to the
+    # stdlib reader so .docx still works, including layers 5 and 6.
+    from docxfallback import Document, qn
+    HAVE_PYTHON_DOCX = False
+
+from docxfallback import fonts_in_use
 
 
 # --------------------------------------------------------------------------
@@ -297,6 +307,28 @@ def load(path, with_tables):
     sys.exit("unsupported file type: %s" % ext)
 
 
+def bold_leadins(doc):
+    """Paragraphs that open with a short bold label followed by plain text --
+    the `**1. Adjustment.** ...` shape left behind by markdown conversion.
+    A heading (one bold run, nothing after it) does not count."""
+    n = 0
+    for p in doc.paragraphs:
+        try:
+            runs = [r for r in p.runs if r.text.strip()]
+        except Exception:
+            continue
+        if len(runs) < 2:
+            continue
+        head, rest = runs[0], runs[1:]
+        if not head.bold or len(head.text.strip()) > 60:
+            continue
+        if any(r.bold for r in rest):
+            continue
+        if "".join(r.text for r in rest).strip():
+            n += 1
+    return n
+
+
 def sentences(text):
     parts = re.split(r"(?<=[.!?])\s+|(?<=[。！？])", text)
     return [s.strip() for s in parts if len(s.strip().split()) >= 4
@@ -483,6 +515,28 @@ def audit(path, with_tables, genre="notebook", marks=None):
                         if c in INVISIBLE})
         print("      kinds: %s  (U+2060 also renders as a gap before dashes "
               "in some PDF exports)" % ", ".join(kinds))
+
+    if doc is not None:
+        latin = [(k, v) for k, v in fonts_in_use(doc).most_common()
+                 if k != "Cambria Math"]
+        if latin:
+            shown = ", ".join("%s %d" % (k, v) for k, v in latin[:5])
+            if len(latin) == 1:
+                verdict = "OK (one Latin family)"
+            elif len(latin) == 2:
+                verdict = ("2 Latin families - heading + body is normal, but "
+                           "check the two are not two spliced sources")
+            else:
+                verdict = ("%d Latin families - a document typed in one sitting "
+                           "has one or two; three means a splice" % len(latin))
+            print("      fonts: %s   %s" % (shown, verdict))
+        n_lead = bold_leadins(doc)
+        if n_lead:
+            print("      bold lead-ins: %d paragraph(s) open with a bold label "
+                  "and continue in plain text (markdown ** survived; drop the "
+                  "bold, keep every word)" % n_lead)
+        else:
+            print("      bold lead-ins: 0")
 
     # ---- 6 artefacts ------------------------------------------------------
     if doc is None:
