@@ -1,7 +1,7 @@
 ---
 name: reduce-ai-flavor
-description: 把 AI 参与过的学生文档改到"看不出是 AI 做的"。覆盖实验记录本、实验报告、实习报告、课程论文、读书报告、文献综述、开题报告、毕业论文、实验问答题、汇报与答辩讲稿——凡是署名交给老师、助教或答辩委员会的东西。含七层泄漏诊断（词汇 / 论证 / 节奏 / 叙事 / 文件 / 闭合 / 修辞）、文类路由（哪几层对该文类算证据）、中英文字反模式、模式 A/B/C、docx run 级改写、补图与逐格验收，以及三个可量化脚本：flavor_audit.py（像不像模型写的，`--genre` 选文类）、consistency.py（说的和表对不对得上）、overlap.py（像不像抄参考稿）。
-whenToUse: 用户说"降 AI 味/去 AI 感/别像 AI 写的/AI 味重吗/这个答案 AI 味重吗/这段像不像 AI/查重/和参考稿太像/交上去看不出是 AI"，或问实验记录本、实验报告、实习报告、课程论文、读书报告、文献综述、开题报告、毕业论文、实验问答题、答辩讲稿、小组作业里任何一份"读起来不像我写的"。
+description: 把 AI 参与过的学生文档改到"看不出是 AI 做的"。覆盖实验记录本、实验报告、实习报告、课程论文、读书报告、文献综述、开题报告、毕业论文、实验问答题、汇报与答辩讲稿——凡是署名交给老师、助教或答辩委员会的东西。含八层泄漏诊断（词汇 / 论证 / 节奏 / 叙事 / 文件 / 闭合 / 修辞 / 版式）、文类路由（哪几层对该文类算证据）、中英文字反模式、模式 A/B/C、docx run 级改写、补图与逐格验收，以及四个可量化脚本：flavor_audit.py（像不像模型写的，`--genre` 选文类）、layout_audit.py（版式像不像模板 / 网页导出，读 PDF 或 HTML）、consistency.py（说的和表对不对得上）、overlap.py（像不像抄参考稿）。
+whenToUse: 用户说"降 AI 味/去 AI 感/别像 AI 写的/AI 味重吗/这个答案 AI 味重吗/这段像不像 AI/查重/和参考稿太像/交上去看不出是 AI"，或说"排版是不是特有 AI 味/一眼假/版式太整齐/这格式像不像模板/表格太丑/加粗太多/没有页码"，或问实验记录本、实验报告、实习报告、课程论文、读书报告、文献综述、开题报告、毕业论文、实验问答题、答辩讲稿、小组作业里任何一份"读起来不像我写的"。
 metadata:
   verified: 2026-10-21
   source_cases:
@@ -10,12 +10,14 @@ metadata:
     - 同题 lab book：版式改写（原稿 8 页 → 定稿 5 页）
     - 同一份 lab book 的 v3→v4：正文 4 处描述曲线而文件 0 张图；机制句 2 处与表矛盾；1 处 x%→4x% 占位符
     - 密立根油滴七道短答题（2–4 分/题，每题 2–4 段）：第 1 层 0 命中、第 3 层 sd/mean 0.39–0.52、第 2 层 defence 0，但第 7 层抽样 2 / 6 / 7 个信号
+    - 密立根油滴实验报告（EN，7 页 HTML→PDF）：文字七层几乎全 PASS，但第 8 层 5 项 STRIP——段首加粗 27 处、Cambria 正文配 Computer Modern 公式、p7 空 87%、无页码、21 个灰底块
   measured:
     - 套话 0/38、sd/mean 0.52 仍像 AI；defence 4→0、meta 1→0、clock 0→2 后通过
     - 断言与表矛盾 3 处 → 0；符号残留（σ/δ）1 处 → 0；交叉引用错 1 处 → 0
     - 正文散文与参考稿重合 3.2% → 0.6%
     - v4：图 0→1、正文曲线词 16→1；机制句 2→1；占位符 1→0；图与表口径差 2%（800 nm）已在图注声明
     - 短答题两组配对实测：q1 句数 7→5、第 7 层 2→1；q7 句数 8→9、第 7 层 6→2（拆句降信号，但不降句数）
+    - 第 8 层实测（同一份报告 v1→v2，文字一个没改）：加粗 8.8%→3.2%、段首标签 6→0、字体族 KaTeX-only→Cambria Math 混用、最大页底留白 91%→23%、页码 0/7→7/7、灰底块 21→0、图 0→2；`layout_audit.py` 由 5 STRIP / 2 PASS 转为 1 REVIEW / 6 PASS
 ---
 
 # 降低 AI 味道
@@ -60,9 +62,9 @@ metadata:
 1. **来源**：`grep -rF "整句特征原文" 工作区/`。如果这句话硬编码在 `build_*.py` 的字符串里、只出现在 git 历史里，或者上一版里根本没有，那"是不是 AI 写的"已经有答案——剩下的问题只是"看不看得出"，不是"是不是"。
 2. **物件**：`len(Document(p).inline_shapes)` 和 `len(Document(p).tables)`。正文在讲图 / 表而文件里没有，比任何句式都硬（§1 第 6 层、§4 补图）。
 
-先跑 `flavor_audit.py` 看七层里哪层亮红（短答题加 `--genre answer --marks N`）；文档有表时再跑 `consistency.py` 看断言和表对不对得上。最常见的误判是"以为要改词，其实要删论证"；第二常见的是"以为要改句，其实要补图"；第三常见的是"以为要改词，其实要砍长度"。
+先跑 `flavor_audit.py` 看七层里哪层亮红（短答题加 `--genre answer --marks N`）；文件是 PDF 或 HTML 时再跑 `layout_audit.py` 看第 8 层；文档有表时再跑 `consistency.py` 看断言和表对不对得上。最常见的误判是"以为要改词，其实要删论证"；第二常见的是"以为要改句，其实要补图"；第三常见的是"以为要改词，其实要砍长度"；**第四常见、也最省力的是"以为要改文字，其实只该动版式"**——第 8 层亮红时，一个字的正文都不用碰。
 
-## 1 七层泄漏（flavor_audit 数 1–7 层，consistency 查第 6 层的表格侧）
+## 1 八层泄漏（flavor_audit 数 1–7 层，layout_audit 数第 8 层，consistency 查第 6 层的表格侧）
 
 | 层 | 泄漏物 | 判据 | 可靠性 |
 |---|---|---|---|
@@ -73,6 +75,7 @@ metadata:
 | 5 文件 | U+2060、字体混用、缩略图、缺字回退 | 脚本扫、逐页看图 | 高（机械） |
 | 6 闭合 | 断言与自己的表 / 符号 / 交叉引用对不上；图与表缺失 | "几乎不变 / 等于总量 / 见 Table N"经不起复算；正文描述曲线而文件 0 张图 | 高（最硬） |
 | 7 修辞 | 成对破折号、倒装、隐喻、对偶、三段式标记、预告式列举、括号补充、镜像段落、收束句 | 句子在替自己修辞，不是在答题 | 高（短答题主判据） |
+| 8 版式 | 段首加粗标签、h2 下横线、全大写字距 kicker、灰阶零强调色、左框提示块、表格全居中 + 灰底表头、公式与正文不同族、分页塌方、无页码、零图 | `layout_audit.py` 数；**不看字句** | 高（机械，且常常是唯一亮的一层） |
 
 **第 7 层是为"没有表、没有图、没有时间戳"的文本准备的。** 七道短答题实测：第 1 层 0 命中、第 3 层 sd/mean 0.39–0.52、第 2 层 defence 0 / meta 0–1——前六层几乎全 PASS，但抽样三题的第 7 层信号仍有 2 / 6 / 7 个。这一层的信号不靠词表，靠**结构**：一句话里两个破折号、`Only under X are Y valid` 这种倒装、`is the bridge between A and B` 这种隐喻、两段用同一个句子骨架、每段末句都在替结论收口。
 
@@ -91,6 +94,10 @@ metadata:
 结论：**套话表和句长方差都不足以判定。** 它们只能当辅助指标。
 
 **数据自洽不算 AI 味。** 同一次实验、同一台仪器扫出来的数，两边本来就该一样；数字相同是证据，不是缺陷。把它和文字重合分开统计。
+
+**第 8 层是唯一一层完全不看字句的。** 前七层问"这段话像不像模型写的"，第 8 层问"这份文件像不像模板 / 网页打印 / Markdown 导出的"。两者可以完全脱钩——实测过一份 7 页英文实验报告：套话 0 命中、sd/mean 0.75（比多数人写得还不均匀）、defence 只有 1 句，文字层几乎全 PASS；但版式一眼 AI：27 个"短加粗标签 + 普通句"、每个 h2 底下一条 1px 灰线、`letter-spacing: 1.2px` 的全大写 kicker、7 级灰阶零强调色、左框 + 浅灰底的提示块、表格全居中配 `#efefef` 表头、正文 Cambria 配 Computer Modern 公式、第 7 页只剩两行、7 页没有页码、0 张图。
+
+**这一层的价值在于：修它一个字都不用改。** 前七层要删句、改写、补记录，第 8 层只要动 CSS / 样式表 / 分页设置。反过来，版式不改，文字改到完美也没用——老师翻开第一页看到的是 27 个加粗标签和一条条标题下横线，不是你的句法。
 
 ## 2 铁律
 
@@ -122,14 +129,16 @@ python scripts/flavor_audit.py 课程论文.docx --genre paper     # 或 thesis 
 python scripts/flavor_audit.py 定稿.docx --tables             # 表格也算进语料
 python scripts/flavor_audit.py 答案.txt --genre answer --marks 4   # 短答题
 python scripts/consistency.py 定稿.docx                       # 有表时必跑
+python scripts/layout_audit.py 定稿.pdf                        # 第 8 层：版式（PDF 或 HTML）
 ```
 
-输出七层，逐层 `PASS / REVIEW / STRIP`，并把**具体句子**列出来。真正要看的是四层：
+输出八层，逐层 `PASS / REVIEW / STRIP`，并把**具体句子**列出来。真正要看的是五层：
 
 - `[2] argument`：defence / meta / mechanism 各几句、是哪几句。这几句就是待删清单；`x%` 这类占位符也在这一层（placeholder）。
 - `[4] narrative`：clock / duration 是否为 0。是的话补真实过程记录。短答题这一层标 `n/a`，不是问题。
 - `[6] artefacts`：images 是不是 0、有没有 `Figure N` / `Table N` 引用却没有对应物件。这一层 STRIP，说明有人在描述看不见的东西，先补图再改句。
 - `[7] rhetoric`：em-dash pairs / inversion / metaphor / antithesis / essay markers / asides / closure / mirrored paragraphs。每个非零项都把那句原文打出来。**短答题先看这一层，再看 `--marks` 给的句数预算。**
+- `[8] layout`（`layout_audit.py`，读 PDF / HTML）：8.1 加粗密度与段首标签、8.2 字体家族与公式字体、8.3 页底留白、8.4 页码、8.5 图、8.6 词距、8.7 灰底块。**这一层亮红时先改它**，因为改它不用碰一个字，性价比最高。docx 先导出 PDF 再跑——版式问题只有渲染后才看得见。
 
 `consistency.py` 不是文风工具，是核对工具：它把"近常数"的表行连同散布列出来、把文中找不到出处的数、只用一两次的希腊符号、`of Table N` 的交叉引用、以及正文引用的图/表在文件里是否存在，逐条摊开，让人拿计算器对。输出分六组，用法见 §10。
 
@@ -356,6 +365,79 @@ verdict 句（"the law is verified"）不是全删：结论段留一句可以，
 - **残留强制分页符** → 每页底部大段空白。页码用 `w:fldSimple PAGE` 字段，不要手打数字。
 - **脚本生成文档的不可见字符**：U+2060（word joiner）常被排版脚本插在数字范围前（`800–2500`）。Word 里看不见，PDF 导出会变成 `800 –2500` 的空隙；查重和文本抽取会当成异常字符。`flavor_audit.py` 第 5 层会数出来。
 
+## 8.5 版式层：一眼认出是"网页打印成 PDF"
+
+**这一层不看字句，只看版式。** 用 `layout_audit.py` 数，读 PDF 或 HTML；docx 先导出 PDF。
+
+| 信号 | 判据 | 为什么是破绽 | 修法 |
+|---|---|---|---|
+| 段首加粗标签 | 段首 `**短标签.**` ≥6 处、形状一致 | Markdown 的 `**标签**` 直接搬进版式；人不会给每段都加粗前两三个词 | 去掉加粗，改 `<i>` 斜体行内引导词；**整句加粗的直接去掉** |
+| 标题下横线 | 每个 h2 都带 `border-bottom` | CSS 装饰，不是排版决定；层级本来就靠字号+间距 | 删。I 到 V 到 Conclusion 一样有 = 没做过判断 |
+| 全大写 + 字距 kicker | `letter-spacing ≥1px` 且 `uppercase` 的副标题 | 2023 年后 AI 生成页面的标志性装饰 | 删掉，或降成普通小字 |
+| 左框提示块 | `border-left` + `background` 的 note / quote 块 | AI 输出"提示块"的标配样式 | 改缩进 + 小字号，无框无底 |
+| 表格全居中 | 文本列也居中；表头 `#efefef` 灰底；全边框 | 默认样式，没做过对齐判断 | booktabs：上下两条实线、无竖线、无底色；文本左对齐、数字右对齐 |
+| 公式与正文不同族 | KaTeX / Computer Modern 配 Times / Cambria | Word 里公式是 Cambria Math，同族同粗细 | `.katex .mathnormal,.mi,.mathrm,.mn{font-family:"Cambria Math"}` |
+| 分页塌方 | 单页底留白 >25%，或末页 <25% 满 | 内容流没被人工干预过 | 先调行距/字号让页数收敛，再处理孤行（见下） |
+| 无页码 | ≥5 页且 0 个页码 | 不是"简洁"，是没做 | `@page` margin box，或导出时 header/footer template |
+| 零图 | 正文提图 ≥2 次、文件 0 张 | 读者看不到你描述的东西（同第 6 层） | 补矢量图，见 §4 补图 |
+| 灰阶零强调 | 7 级灰、一个彩色都没有 | "去色 = 安全"的模板策略 | 单色对正式报告本来是对的；要改的是**层次**不是颜色 |
+
+**修的顺序（按性价比，不按编号）：** 8.3 分页 → 8.1 加粗 → 8.7 装饰 → 8.2 字体 → 8.4 页码 → 表格 → 8.5 补图。前四项全是全局替换，一次改完；补图最花时间，放最后。
+
+**这一层属于模式 A：文字一个不动。** 唯一例外是去掉加粗后句子不成句——实测只出现 5 处（`Final result.` → `Final result:`、`Relative error.` → `The relative error is`、`Uncertainty propagation. With` → `For the uncertainty propagation, with`、`Direction of the residual error.` → `The direction of the residual error:`、`Summary.`/`Discussion.` → 小节标题）。**每一处都要逐条报给用户**，并附一次逐词 diff 证明其余没动。
+
+### HTML→PDF 重排配方（实测：页底留白 87% → 23%，页数不变）
+
+```css
+@page { size: A4; margin: 20mm 18mm 18mm 18mm; }
+body  { font-family:"Cambria",Georgia,serif; font-size:10.4pt; line-height:1.5;
+        hyphens:auto; }                 /* justify 必须配 hyphens，否则词距被拉开 */
+h2    { font-size:11.8pt; font-weight:600; margin:6.4mm 0 2.8mm; }   /* 无 border-bottom */
+.note { font-size:9.3pt; padding:0 7mm; }                            /* 缩进，无框无底 */
+/* booktabs */
+thead th { border-top:1pt solid #1a1a1a; border-bottom:.5pt solid #1a1a1a; }
+tbody tr:last-child td { border-bottom:1pt solid #1a1a1a; }
+tbody td { padding:1.05mm 1.8mm; line-height:1.3; }
+/* 公式与正文同族 */
+.katex .mathnormal,.katex .mi,.katex .mathrm,.katex .mn { font-family:"Cambria Math",Cambria,serif; }
+```
+
+分页三条铁律：
+
+1. **`page-break-inside:avoid` 只给 `figure` / `.eq` / 结论框**，别给表格——给表格就是"整块被推到下页 + 上一页留 20% 空白"。
+2. **图太高会把整页顶空。** 图宽 86%、`viewBox` 压扁（640×190 而不是 640×260），加图注控制在 3 行内；实在放不下就承认它该在下一页，别硬塞。
+3. **页数收敛靠 line-height 和 h2 margin，不靠缩字号。** 实测 line-height 1.56→1.5、h2 margin 7.5→6.4mm，8 页收敛到 7 页，各页底留白从 18–75% 降到 ≤30pt。
+
+页码用导出器的 header/footer template，不要在 HTML 里手打数字：
+
+```python
+# Playwright + 本机 Chrome（不必下载 chromium）
+page.pdf(path=out, format="A4", print_background=True,
+         display_header_footer=True, header_template="<div></div>",
+         footer_template='<div style="width:100%;font-family:Cambria,serif;font-size:9pt;'
+                         'color:#555;padding:0 18mm;box-sizing:border-box;">'
+                         '<table style="width:100%"><tr><td>短标题</td>'
+                         '<td style="text-align:right"><span class="pageNumber"></span></td>'
+                         '</tr></table></div>',
+         margin={"top":"20mm","bottom":"18mm","left":"18mm","right":"18mm"})
+```
+
+KaTeX 走 CDN 时，导出前必须 `page.wait_for_selector(".katex")` 再等 1 s，否则公式是源码。
+
+### 校准（同一份报告 v1 → v2，文字一个没改）
+
+| 信号 | v1 | v2 | 结论 |
+|---|---|---|---|
+| 8.1 加粗密度 / 段首标签 | 8.8% / 6 处 | 3.2% / 0 处 | 改前 STRIP |
+| 8.2 公式字体 | 只有 KaTeX（CM 风格） | Cambria Math 混用 | 改前 STRIP |
+| 8.3 页底留白 | 最大 91%（末页两行） | 最大 23% | 改前 STRIP |
+| 8.4 页码 | 0/7 | 7/7 | 改前 STRIP |
+| 8.7 灰底块 | 21 | 0 | 改前 STRIP |
+| 8.5 图 | 0（正文也没提图） | 2 | 改后新增 |
+| 合计 | **5 STRIP / 2 PASS** | **1 REVIEW / 6 PASS** | — |
+
+**注意 8.5 在 v1 上是 PASS**：那份报告正文确实一次都没引用图，所以"零图"没被点亮。补图是**这一层的加分项，不是它的判据**——判据是"说了有图却看不到"。同一份文件文字层几乎全 PASS（套话 0、sd/mean 0.75、defence 1），光靠版式就够判它一眼 AI。
+
 ## 9 docx 手术与版式验证（模式 B 必看）
 
 - **优先做 run 内等值替换，不要整段重建。** 定位目标 run，`assert run.text == old`，只换文本——上下标、字体、字号全部原样保留。只有需要改变上下标归属时，才抓 rPr 模板（普通 / 上标 / 下标各一份）重建；不要 `p.clear()` 后直接 `add_run()`。
@@ -369,17 +451,20 @@ verdict 句（"the law is verified"）不是全删：结论段留一句可以，
   - **LibreOffice Kit 不覆盖已存在的输出**：报 `EEXIST: file already exists`。先删旧 PDF 再导出，或换新文件名——不要误判成文档坏了。
 - 清 U+2060 会让 PDF 里 `800 –2500` 的空隙消失，这是顺带的好处。
 
-## 10 量化验收：三个脚本，三个问题
+## 10 量化验收：四个脚本，四个问题
 
 | 脚本 | 回答的问题 | 输出 |
 |---|---|---|
 | `flavor_audit.py` | 这段文字像不像模型写的？ | 七层 PASS / REVIEW / STRIP + 具体句子；`--genre` 选文类（notebook / report / answer / paper / thesis / talk），该文类不适用的层标 `n/a`；`--marks N` 另给句数预算 |
+| `layout_audit.py` | 这份文件像不像模板 / 网页导出的？ | 第 8 层 8.1–8.7 PASS / REVIEW / STRIP + 逐页留白、字体家族、页码、灰底块数；读 PDF 或 HTML |
 | `consistency.py` | 说的和表对不对得上？物件齐不齐？ | 近常数行的散布、无出处的数、符号、交叉引用、缺失图/表、占位符 |
 | `overlap.py` | 这段文字是不是从参考稿来的？ | 重合度、逐字相同串、同名标题 |
 
-三个都要跑，但**不要混**：重合度高是抄参考稿的风险；论证 / 叙事亮红是 AI 写的风险；断言与表不符是"写句子的人没看数据"的风险——三类问题三种修法，改一类不会带走另一类。
+四个都要跑，但**不要混**：重合度高是抄参考稿的风险；论证 / 叙事亮红是 AI 写的风险；断言与表不符是"写句子的人没看数据"的风险；版式亮红是"没人碰过排版"的风险——四类问题四种修法，改一类不会带走另一类。**版式层最便宜，先修它。**
 
-**没有 python-docx 也能跑。** 三个脚本都带 `scripts/docxfallback.py`（纯标准库解析 `word/document.xml`），`from docx import Document` 失败时自动切换：`flavor_audit.py` 不再降级成 txt（第 5/6 层照出），`consistency.py` / `overlap.py` 也不再直接拒收。实测：无网络、pip 装不上 python-docx 的机器上，三个脚本对同一份 .docx 都能出完整报告。差异只有一处 —— fallback 只读正文、表格与 `w:drawing`，不解析页眉页脚和批注。
+**没有 python-docx 也能跑。** `flavor_audit.py` / `consistency.py` / `overlap.py` 都带 `scripts/docxfallback.py`（纯标准库解析 `word/document.xml`），`from docx import Document` 失败时自动切换：`flavor_audit.py` 不再降级成 txt（第 5/6 层照出），`consistency.py` / `overlap.py` 也不再直接拒收。实测：无网络、pip 装不上 python-docx 的机器上，三个脚本对同一份 .docx 都能出完整报告。差异只有一处 —— fallback 只读正文、表格与 `w:drawing`，不解析页眉页脚和批注。
+
+`layout_audit.py` 走另一条路：它要**渲染后的版式**，所以吃 PDF（需 `pymupdf`）或 HTML（纯标准库），docx 得先导出。这是有意的——版式问题在 docx 源码里看不出来，只有渲染成页才看得见（同 §8 的缺字回退）。
 
 ```bash
 python scripts/consistency.py 我的定稿.docx
@@ -390,6 +475,8 @@ python scripts/flavor_audit.py 课程论文.docx --genre paper
 python scripts/flavor_audit.py 开题报告.docx --genre thesis
 python scripts/flavor_audit.py 答辩稿.txt --genre talk
 python scripts/flavor_audit.py 答案.txt --genre answer --marks 4
+python scripts/layout_audit.py 我的定稿.pdf                     # 第 8 层
+python scripts/layout_audit.py report.html                     # 或直接读源 HTML
 ```
 
 **consistency.py 怎么读**（六组输出，只做提示，判断仍在人）：
@@ -457,6 +544,15 @@ python scripts/flavor_audit.py 答案.txt --genre answer --marks 4
 | 盲评只给正文 | 评审说"这些表都是空的" | 连表格一起给，或声明"表里有数，别评表格" |
 | 导出目标已存在 | LibreOffice `EEXIST: file already exists` | 先删旧 PDF，或换输出名 |
 | run 替换断言失败 | run 以空格开头，或范围里含 U+2060 | `repr()` 打印后再改，别放宽断言 |
+| 文字全 PASS 就以为干净 | 套话 0、sd/mean 0.75、defence 1，文档仍一眼 AI | 跑 `layout_audit.py`；第 8 层可以单独亮红 |
+| 拿"AI 味"当改词的理由 | 版式问题去改句子，改完还是一眼假 | 第 8 层亮红时一个字的正文都不用碰；先动版式 |
+| 给表格加 `page-break-inside:avoid` | 整块被推到下页，上一页留 20% 空白 | 只给 `figure` / `.eq` / 结论框；表格靠行断开 + 重复表头 |
+| 图太高顶空一页 | `viewBox` 640×260 的图放不进半页，整页留白 | 压扁 `viewBox`、图宽 86%、图注 ≤3 行；放不下就让它去下一页 |
+| 缩字号凑页数 | 8 页硬压成 7 页，正文变 9pt | 先调 line-height（1.56→1.5）和 h2 margin，字号最后才动 |
+| 只去掉加粗不看句子 | `Final result.` 变成裸标签，读不通 | 补 5 处虚词，逐条报给用户，附逐词 diff |
+| 灰底块误判 | booktabs 表格有 13 条横线，但 0 个灰底 | 横线是正常表格线；判据是**灰底**（表头 `#efefef` / 提示框底色） |
+| 图注算图、位图才算图 | SVG 矢量图 `get_images()` 返回 0，被判"零图" | 图数 = max(位图, 图注数)；矢量图不算位图 |
+| 公式字体只换一半 | 覆盖了 `.mathnormal`，根号还是 Computer Modern | 只覆盖字母/数字类；根号、大运算符留在 KaTeX_Size 是可接受的残留，报 REVIEW 不报 STRIP |
 
 ## 12 交付前清单
 
@@ -477,20 +573,26 @@ python scripts/flavor_audit.py 答案.txt --genre answer --marks 4
 - [ ] 上下标 run 未丢；表格除有意改动外零差异
 - [ ] U+2060 等不可见字符清零
 - [ ] [5] 字体家族 ≤2、`bold lead-ins` = 0（markdown 的 `**标签**` 已去掉，文字没改）
+- [ ] **第 8 层：`layout_audit.py` 无 STRIP；段首加粗标签 = 0；灰底块 = 0**
+- [ ] **第 8 层：逐页页底留白 ≤15%（末页 ≤55%）；≥5 页必须有页码**
+- [ ] **第 8 层：公式字体与正文同族（或已知残留只有根号 / 大运算符）**
+- [ ] **第 8 层：`text-align:justify` 配了 `hyphens:auto`；表格文本列左对齐、数字列右对齐**
 - [ ] 预填稿（实验未做、数据段留白）的第 4 层 REVIEW 已确认是"还没到那一步"，没有为了消红去编时间戳
 - [ ] 同引擎重导出 PDF，逐页看过图（分页、孤行、缺字）
 - [ ] 短答题：句数 ≤ 分值×1.5；第 7 层 ≤2 个信号；无镜像段落
 - [ ] 短答题：没有 `The fundamental reason` / `In addition` / `Finally` 这类三段式标记
 - [ ] 全文搜过 `—`（有没有成对出现）和 `;`（每 100 词 <1.5 个）；这两个字符是最浓的 AI 味
 - [ ] 内容 / 物理层面的问题单独列给用户，没有被顺手改掉
-- [ ] 给作者一份 diff，说明改了哪几句
+- [ ] 给作者一份 diff，说明改了哪几句（版式改动也列一份：动了哪些样式、有没有补虚词）
 
 ## 13 配套
 
 文档本身的读写走 `office-docx`，导出走 `office-export-pdf`，逐页看图走 `office-render`。
 本技能只负责"内容像不像作者本人"，不重复那三个技能的 OOXML 细节。
 
-## 14 一页复盘：五类错误，五种修法
+第 8 层的 HTML→PDF 通道（§8.5 配方）用 Playwright + 本机 Chrome：`p.chromium.launch(channel="chrome")`，不必 `playwright install` 下载 chromium。只要 `pip install playwright` 加本机已装的 Chrome 即可。
+
+## 14 一页复盘：六类错误，六种修法
 
 | 错误 | 本案例的样子 | 怎么修 | 哪个脚本先发现 |
 |---|---|---|---|
@@ -499,11 +601,12 @@ python scripts/flavor_audit.py 答案.txt --genre answer --marks 4
 | 物件缺失 | 4 处描述曲线、`inline_shapes = 0`；`Table 2 and the Planck curves` 无处可看 | 用同一份数据补图，正文加 `(Figure 1)` 指过去 | flavor_audit [6] |
 | 叙事为零 | 0 个时间戳，正文像成品报告 | 补仪器记录里的真实时间 / 设置 | flavor_audit [4] |
 | 修辞泄漏 | 成对破折号、`Only under X are Y valid`、`is the bridge between`、两段同骨架、每段末句收束 | 拆句、删标记词、还原语序；先砍长度 | flavor_audit [7] |
+| 版式泄漏 | 27 个段首加粗标签、每个 h2 带下横线、全大写字距 kicker、7 级灰阶、表格全居中配灰底表头、Cambria 配 Computer Modern、p7 空 87%、无页码 | 删加粗、删装饰、改 booktabs、换 Cambria Math、修分页、加页码——**文字一个不动** | layout_audit 8.1–8.7 |
 
-长文档的优先级：**先补物件 / 修断言，再删论证，最后补叙事。** 物件缺失和断言错误都让读者三分钟看出"写的人没看过数据"；论证删多了只是少几句话；叙事最花时间，且常常没有记录可补，宁可标"无记录"。
+长文档的优先级：**先修版式，再补物件 / 修断言，再删论证，最后补叙事。** 版式最便宜（全局替换，不用碰正文），而且它是老师翻开第一页就看到的东西；物件缺失和断言错误让读者三分钟看出"写的人没看过数据"；论证删多了只是少几句话；叙事最花时间，且常常没有记录可补，宁可标"无记录"。
 
 **短答题的优先级正好相反：先砍长度，再动修辞。** 因为多数修辞信号是"写太多"的副产物——答到 分值×1.5 句时，装不下镜像段落、装不下三段式标记、也装不下那句"所以实际测量中……"。只改修辞不砍长度，第 7 层会一直亮着。
 
-一句话：**AI 味最轻的版本，不是句子最短的版本，是每句话都能对上数据、每个图都能被正文指认、每个过程都能对上记录的版本。**
+一句话：**AI 味最轻的版本，不是句子最短的版本，是每句话都能对上数据、每个图都能被正文指认、每个过程都能对上记录、每一页都没有多余装饰的版本。**
 
 短答题是例外：那里 AI 味最轻的版本，就是**最短**的版本。判据只有一条——写够分数该给的，然后停。

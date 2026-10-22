@@ -16,12 +16,13 @@
 - **断言层**：正文说「几乎相同」，自己的表算出来差 6.2%；正文说「积分得到总量」，表里只占 70%
 - **物件层**：正文 4 处描述曲线，文件里 `inline_shapes = 0`，一张图都没有
 - **叙事层**：0 个时间戳，正文像成品报告而不是过程记录
+- **版式层**：文字全 PASS，但 27 个段首加粗标签、每个标题下一条灰线、表格全居中配灰底表头、正文 Cambria 配 Computer Modern 公式、第 7 页只剩两行、7 页没有页码
 
-所以这个技能的判据不是"句子像不像 AI"，而是**每句话能不能对上数据、每个图能不能被正文指认、每个过程能不能对上记录**。
+所以这个技能的判据不是"句子像不像 AI"，而是**每句话能不能对上数据、每个图能不能被正文指认、每个过程能不能对上记录、每一页有没有多余装饰**。
 
 ---
 
-## 七层泄漏诊断
+## 八层泄漏诊断
 
 | 层 | 查什么 |
 |---|---|
@@ -32,8 +33,11 @@
 | 5 文件 | Office 元数据指纹、修订痕迹、不可见字符 |
 | 6 闭合 | 正文断言与自己的表格是否对得上；正文提到的图是否存在 |
 | 7 修辞 | 成对破折号、三段式标记、每段末句收束、镜像段落 |
+| 8 版式 | 段首加粗标签、标题下横线、全大写字距 kicker、灰底表头、公式与正文不同族、分页塌方、无页码 |
 
 不同文类命中的层不一样，所以有**文类路由**：实验记录本看重 4/6 层，短答题看重 3/7 层，课程论文看重 2/5 层。`flavor_audit.py --genre` 用来选文类。
+
+**第 8 层是唯一完全不看字句的。** 前七层问"这段话像不像模型写的"，第 8 层问"这份文件像不像模板 / 网页打印 / Markdown 导出的"。两者可以完全脱钩：实测一份 7 页实验报告，套话 0 命中、sd/mean 0.75、defence 只有 1 句，文字层几乎全 PASS，但版式一眼 AI。这一层的价值在于——**修它一个字都不用改**。
 
 ---
 
@@ -51,9 +55,9 @@
 
 ---
 
-## 三个量化脚本
+## 四个量化脚本
 
-全部**只读**，零第三方依赖（纯标准库，自己解析 docx / pdf），输出的是"具体哪句话有问题"，不是分数。
+全部**只读**，输出的是"具体哪句话 / 哪一页有问题"，不是分数。`flavor_audit` / `consistency` / `overlap` 零第三方依赖（纯标准库，自己解析 docx / pdf）；`layout_audit` 读 PDF 时需要 `pymupdf`，读 HTML 时零依赖。
 
 装了 `python-docx` 就用它；没装（离线机器、受限 Python）自动退到 `docxfallback.py`，三个脚本照常出完整报告，包括第 5/6 层。
 
@@ -86,6 +90,17 @@ python scripts/overlap.py 我的定稿.docx 参考稿.pdf --baseline 我的原�
 
 实测：正文散文与参考稿重合 **3.2% → 0.6%**。
 
+### layout_audit.py —— 这份文件的版式像不像模板
+
+```bash
+python scripts/layout_audit.py 定稿.pdf
+python scripts/layout_audit.py report.html
+```
+
+八项体检，逐项 PASS / REVIEW / STRIP：加粗密度与段首标签、字体家族与公式字体、逐页页底留白、页码、图数、词距、灰底块。docx 先导出 PDF 再跑 —— 版式问题只有渲染后才看得见。
+
+实测同一份报告 v1 → v2（文字一个没改）：加粗 8.8%→3.2%、段首标签 6→0、最大页底留白 91%→23%、页码 0/7→7/7、灰底块 21→0；整体由 **5 STRIP / 2 PASS** 转为 **1 REVIEW / 6 PASS**。
+
 ### pdftext.py —— 顺手带的 PDF 取文
 
 ```bash
@@ -100,9 +115,10 @@ python scripts/pdftext.py input.pdf [output.txt]
 
 ```
 reduce-ai-flavor/
-├── SKILL.md                  # 主体：七层诊断、文类路由、改写配方、陷阱表、交付清单
+├── SKILL.md                  # 主体：八层诊断、文类路由、改写配方、HTML→PDF 重排配方、陷阱表、交付清单
 └── scripts/
     ├── flavor_audit.py       # 像不像模型写的（1–7 层）
+    ├── layout_audit.py       # 版式像不像模板/网页导出（第 8 层，读 PDF 或 HTML）
     ├── consistency.py        # 断言与表格/图是否闭合（第 6 层）
     ├── overlap.py            # 与参考稿的相似度
     ├── docxfallback.py       # 无 python-docx 时的标准库 docx 读取
@@ -137,7 +153,7 @@ cd reduce-ai-flavor
 python scripts/flavor_audit.py 你的文档.docx
 ```
 
-Python 3.9+，无 pip 依赖。
+Python 3.9+。`layout_audit.py` 读 PDF 时需要 `pip install pymupdf`（读 HTML 不需要）。
 
 ---
 
