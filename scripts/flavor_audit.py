@@ -148,11 +148,11 @@ INVERSION = [
     # anchored to sentence start or a clause break, and no comma may intervene:
     # "only of order rho*g*r, so the net force is downward" is not an
     # inversion, "Only under this assumption are V ... valid" is
-    r"(?:^|[,;:]\s)Only\b[^.,;:]{0,60}?\b(?:is|are|was|were|does|do|did|can|"
+    r"(?:^|[,;:]\s)(?-i:Only)\b[^.,;:]{0,60}?\b(?:is|are|was|were|does|do|did|can|"
     r"will|has|have)\b(?!\s+to\b)",
-    r"(?:^|[,;:]\s)Not until\b[^.,;:]{0,60}?\b(?:is|are|was|were|does|do|did|"
+    r"(?:^|[,;:]\s)(?-i:Not until)\b[^.,;:]{0,60}?\b(?:is|are|was|were|does|do|did|"
     r"can)\b(?!\s+to\b)",
-    r"\b(?:Rarely|Seldom|Little did|Never before)\b",
+    r"\b(?-i:Rarely|Seldom|Little did|Never before)\b",
 ]
 
 # A metaphor where a plain predicate would do. "X is the bridge between A and B"
@@ -194,7 +194,7 @@ ESSAY_MARK = [
     r"\bWhat matters (?:here )?is\b",
     r"\bIt (?:is|seems) (?:therefore )?(?:reasonable|natural|useful) to\b",
 ]
-ESSAY_MARK_ZH = ["首先", "其次", "最后", "综上", "关键在于", "从根本上说",
+ESSAY_MARK_ZH = ["首先", "其次", "最后，", "综上", "关键在于", "从根本上说",
                  "究其原因", "由此可见"]
 
 # A short gloss slipped into brackets: "(and hence the charge)", "(which is
@@ -235,10 +235,11 @@ TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\b")
 DURATION_RE = re.compile(
     r"\b\d+(?:\.\d+)?\s*(?:min(?:ute)?s?|s|sec(?:ond)?s?|h|hours?)\b", re.I)
 
-FIG_REF = re.compile(r"\bFig(?:ure)?\.?\s*(\d+)", re.I)
-FIG_CAP = re.compile(r"^\s*Fig(?:ure)?\.?\s*(\d+)\.", re.I)
-TAB_REF = re.compile(r"\bTables?\s+(\d+)", re.I)
-TAB_CAP = re.compile(r"^\s*Table\s+(\d+)\.", re.I)
+FIG_REF = re.compile(r"(?:\bFig(?:ure)?\.?\s*|图\s*)(\d+)", re.I)
+FIG_CAP = re.compile(r"^\s*(?:Fig(?:ure)?\.?\s*|图\s*)(\d+)[.．:：]?", re.I)
+TAB_REF = re.compile(r"(?:\bTables?\s+|表\s*)([0-9]+|[A-Z]\d+)", re.I)
+TAB_CAP = re.compile(r"^\s*(?:Table\s+|表\s*)([0-9]+|[A-Z]\d+)[.．:：]?", re.I)
+CAPTION_LINE = re.compile(r"^\s*(?:Table|Figure|Fig\.?|表|图)\s*[0-9A-Z]", re.I)
 CURVE_WORDS = re.compile(
     r"\b(?:curve|curves|plot|plotted|graph|spectrum|spectra)\b", re.I)
 
@@ -313,6 +314,8 @@ def bold_leadins(doc):
     A heading (one bold run, nothing after it) does not count."""
     n = 0
     for p in doc.paragraphs:
+        if CAPTION_LINE.match(p.text or ""):
+            continue
         try:
             runs = [r for r in p.runs if r.text.strip()]
         except Exception:
@@ -329,6 +332,19 @@ def bold_leadins(doc):
     return n
 
 
+def content_tables(doc):
+    """Data tables, not the 1-row borderless tables used to lay out equations."""
+    out = []
+    for t in doc.tables:
+        if len(t.rows) != 1:
+            out.append(t)
+            continue
+        nonempty = sum(1 for c in t.rows[0].cells if c.text.strip())
+        if nonempty > 1:
+            out.append(t)
+    return out
+
+
 def sentences(text):
     parts = re.split(r"(?<=[.!?])\s+|(?<=[。！？])", text)
     return [s.strip() for s in parts if len(s.strip().split()) >= 4
@@ -337,6 +353,13 @@ def sentences(text):
 
 def words(text):
     return len(text.split())
+
+
+def first_person_count(text):
+    """English + Chinese first person; a single-person lab group uses 我/I."""
+    return len(re.findall(r"\b(?:we|our|my)\b", text, re.I)) + \
+           len(re.findall(r"\bI\b", text)) + \
+           len(re.findall(r"我(?:们)?", text))
 
 
 def pct(n, total):
@@ -375,11 +398,16 @@ def mirror_pairs(prose):
     droplet is first ...' / 'In the dynamic method the falling time ...', same
     five-beat skeleton, same closing 'N quantities are needed'."""
     out = []
-    sk = [para_skeleton(p) for p in prose]
+    sk = []
+    for p in prose:
+        if re.match(r"^\s*\d+[.、]", p) or CAPTION_LINE.match(p):
+            sk.append([])
+        else:
+            sk.append(para_skeleton(p))
     for i in range(len(sk)):
         for j in range(i + 1, len(sk)):
             a, b = sk[i], sk[j]
-            if len(a) < 2 or len(b) < 2 or abs(len(a) - len(b)) > 1:
+            if len(a) < 3 or len(b) < 3 or abs(len(a) - len(b)) > 1:
                 continue
             n = min(len(a), len(b))
             same = sum(1 for k in range(n) if a[k] and a[k] == b[k])
@@ -483,8 +511,7 @@ def audit(path, with_tables, genre="notebook", marks=None):
         print("\n[3] rhythm       not enough sentences")
 
     # ---- 4 narrative ------------------------------------------------------
-    fp = len(re.findall(r"\b(?:we|our|my)\b", body, re.I)) + \
-         len(re.findall(r"\bI\b", body))
+    fp = first_person_count(body)
     times = len(TIME_RE.findall(body))
     durs = len(DURATION_RE.findall(body))
     procs = len(PROCESS_EN.findall(body)) + sum(body.count(z) for z in PROCESS_ZH)
@@ -555,10 +582,10 @@ def audit(path, with_tables, genre="notebook", marks=None):
         fig_refs = sorted({int(m.group(1)) for m in FIG_REF.finditer(body)})
         fig_caps = sorted({int(m.group(1)) for p in paras
                            for m in FIG_CAP.finditer(p)})
-        tab_refs = sorted({int(m.group(1)) for m in TAB_REF.finditer(body)})
-        tab_caps = sorted({int(m.group(1)) for p in paras
+        tab_refs = sorted({m.group(1) for m in TAB_REF.finditer(body)})
+        tab_caps = sorted({m.group(1) for p in paras
                            for m in TAB_CAP.finditer(p)})
-        n_tables = len(doc.tables)
+        n_tables = len(content_tables(doc))
         curve_hits = len(CURVE_WORDS.findall(body))
 
         problems = []
@@ -573,7 +600,7 @@ def audit(path, with_tables, genre="notebook", marks=None):
         missing_caps = n_tables - len(tab_caps)
         if missing_caps > 1:      # one uncaptioned table is usually the cover
             problems.append("%d tables have no 'Table N.' caption" % missing_caps)
-        bad_ref = [k for k in tab_refs if k > n_tables]
+        bad_ref = [k for k in tab_refs if k.isdigit() and int(k) > n_tables]
         if bad_ref:
             problems.append("text cites Table %s, only %d tables exist"
                             % (", ".join(str(k) for k in bad_ref), n_tables))

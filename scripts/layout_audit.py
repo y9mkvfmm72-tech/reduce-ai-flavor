@@ -19,6 +19,8 @@ docx 请先导出 PDF 再跑——版式问题只有渲染后才看得见。
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import re
 import sys
 from collections import Counter
@@ -32,12 +34,24 @@ if hasattr(sys.stdout, "reconfigure"):
 PASS, REVIEW, STRIP, NA = "PASS", "REVIEW", "STRIP", "n/a"
 
 MATH_FONT = re.compile(
-    r"KaTeX|CambriaMath|^Math|Math$|^CM[A-Z]|LatinModern|STIX|XITS|Asana|TeXGyre", re.I)
+    r"KaTeX|CambriaMath|^Math|Math$|^CM[A-Z]|LatinModern|STIX|XITS|Asana|TeXGyre|OpenSymbol", re.I)
 STYLE_WORDS = {
     "bold", "italic", "oblique", "regular", "medium", "light", "semibold",
     "black", "roman", "book", "bolditalic", "semilight", "thin", "heavy",
 }
 PAGENO = re.compile(r"^[\s\-–—·|]*\d{1,3}[\s\-–—·|]*$|^\d{1,3}\s*/\s*\d{1,3}$")
+
+
+def is_page_number_line(txt: str) -> bool:
+    t = txt.strip()
+    if not t:
+        return False
+    if re.match(r"(?i)^\s*(?:table|figure|fig\.?|表|图)\s*[0-9A-Z]", t):
+        return False
+    if PAGENO.match(t):
+        return True
+    # "Millikan oil drop experiment 1" / "密立根油滴实验 1"
+    return len(t) <= 80 and bool(re.search(r"(?:^|\s)(\d{1,3})\s*$", t))
 FIGCAP = re.compile(r"Figure\s+\d+\s*[.:：]|Fig\.\s*\d+\s*[.:：]|图\s*\d+\s*[.:：]")
 FIGREF = re.compile(r"Figure\s+\d+[ab]?|Fig\.\s*\d+[ab]?|图\s*\d+[ab]?")
 
@@ -48,12 +62,13 @@ def strip_subset(name: str) -> str:
 
 def family_of(name: str) -> str:
     n = strip_subset(name)
-    parts = re.split(r"[-,]", n)
-    keep = [parts[0]]
-    for p in parts[1:]:
-        if p.strip().lower() not in STYLE_WORDS:
-            keep.append(p)
-    return "-".join(keep) or n
+    # "TimesNewRomanPS-BoldMT" / "TimesNewRomanPSMT" are one family.
+    n = re.sub(r"(?i)[- ]?PS(?:MT)?$", "", n)
+    n = re.sub(r"(?i)[- ]?(?:Bold|Italic|Oblique|Regular|Medium|Light|SemiBold|"
+               r"Black|Thin|Heavy)(?:MT)?$", "", n)
+    n = re.sub(r"(?i)[- ]?PS$", "", n)
+    n = re.sub(r"(?i)[- ]?MT$", "", n)
+    return n or strip_subset(name)
 
 
 def emit(tag: str, verdict: str, headline: str, details=None) -> None:
@@ -79,7 +94,8 @@ def audit_pdf(path: str) -> None:
         sys.exit("PDF 没有页面")
 
     char_by_font: Counter = Counter()
-    bold_chars = total_chars = 0
+    bold_by_size: Counter = Counter()
+    total_by_size: Counter = Counter()
     lead_ins = []
     bottoms, tops = [], []
     has_pageno = []
@@ -91,6 +107,12 @@ def audit_pdf(path: str) -> None:
         H, W = page.rect.height, page.rect.width
         footer_zone = H * 0.92
         blocks = page.get_text("dict")["blocks"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                tabs = page.find_tables()
+            table_rects = [fitz.Rect(t.bbox) for t in tabs.tables]
+        except Exception:
+            table_rects = []
 
         page_bottoms, page_tops, pn = [], [], False
         for b in blocks:
@@ -103,15 +125,22 @@ def audit_pdf(path: str) -> None:
                     if not t.strip():
                         continue
                     char_by_font[sp["font"]] += len(t)
-                    total_chars += len(t)
+                    bx0, by0, bx1, by1 = sp["bbox"]
+                    in_table = any(
+                        r.contains(fitz.Point((bx0 + bx1) / 2, (by0 + by1) / 2))
+                        for r in table_rects)
+                    if in_table:
+                        continue
+                    sz = round(sp["size"], 1)
+                    total_by_size[sz] += len(t)
                     if (sp["flags"] & 16) or "bold" in sp["font"].lower():
-                        bold_chars += len(t)
+                        bold_by_size[sz] += len(t)
 
             for line in lines:
                 txt = "".join(sp["text"] for sp in line["spans"]).strip()
                 y1 = line["bbox"][3]
                 if y1 >= footer_zone:
-                    if PAGENO.match(txt):
+                    if is_page_number_line(txt):
                         pn = True
                 else:
                     page_bottoms.append(y1)
@@ -158,7 +187,11 @@ def audit_pdf(path: str) -> None:
 
     body = " ".join(chunks)
 
-    # ---- 8.1 加粗
+    # ---- 8.1 加粗（只量正文大小的字；标题/表头加粗不算）
+    body_size = total_by_size.most_common(1)[0][0] if total_by_size else 0
+    body_cut = body_size + 0.6
+    bold_chars = sum(c for s, c in bold_by_size.items() if s <= body_cut)
+    total_chars = sum(c for s, c in total_by_size.items() if s <= body_cut)
     ratio = bold_chars / total_chars if total_chars else 0
     v = STRIP if ratio > 0.06 or len(lead_ins) >= 8 else (
         REVIEW if ratio > 0.035 or len(lead_ins) >= 4 else PASS)
@@ -194,7 +227,8 @@ def audit_pdf(path: str) -> None:
     details = ["、".join(f"{f}({c})" for f, c in ranked[:6]), note]
     if type3:
         details.append(f"另有 {type3} 字由 Type3 绘制（多为图内 SVG 文字，可印不可选）")
-    emit("8.2", v, f"字体家族 {len(ranked)} 个", details)
+    emit("8.2", v, f"字体家族 {len(other_fams)} 个" +
+         (f" + 数学字体 {len(math_fams)}" if math_fams else ""), details)
 
     # ---- 8.3 分页
     usable = max(bottoms)
@@ -206,7 +240,7 @@ def audit_pdf(path: str) -> None:
     worst_mid = max(mid) if mid else 0
     last = blanks[-1] if n >= 3 else 0
     v = STRIP if worst_mid > 0.25 or last > 0.75 else (
-        REVIEW if worst_mid > 0.15 or last > 0.55 else PASS)
+        REVIEW if worst_mid > 0.15 or last > 0.56 else PASS)
     bad = [(i + 1, round(r * 100)) for i, r in enumerate(blanks) if r > 0.15]
     emit("8.3", v, f"页底留白最大 {max(blanks) * 100:.0f}%",
          ["逐页：" + " ".join(f"p{i + 1}={r * 100:.0f}%" for i, r in enumerate(blanks))]

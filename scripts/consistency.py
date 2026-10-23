@@ -49,7 +49,12 @@ WEAK = [r"\bwithin\b", r"\bagree", r"\bconsistent\b", r"\bmean\b", r"\baverage\b
 NAMING = [r"\bwritten as\b", r"\bhere it is written\b", r"\bdenoted\b", r"\blabell?ed\b",
           r"\blabels?\b", r"\breferred to as\b", r"\bcalled\b",
           "记为", "记作", "写作", "称为"]
-CAPTION = re.compile(r"^Table\s+\d+\.")
+CAPTION = re.compile(r"^\s*(?:Table\s+|表\s*)([0-9]+|[A-Z]\d+)[.．:：]?", re.I)
+
+
+def caption_number(text):
+    m = CAPTION.match(text or "")
+    return m.group(1) if m else None
 
 # A cause asserted without a measured basis. Check each against the tables.
 MECHANISM = [
@@ -67,9 +72,9 @@ PLACEHOLDER = [
     r"\bx\s*%", r"\b\d+x\s*%", r"\bfor (?:every|each) x\b", r"\bsome x\b",
     r"\bx\s*times\b", r"\bproportional to x\b", r"\barbitrary (?:x|n)\b",
 ]
-FIG_REF = re.compile(r"\bFig(?:ure)?\.?\s*(\d+)", re.I)
-CAP_FIG = re.compile(r"^\s*Fig(?:ure)?\.?\s*(\d+)\.", re.I)
-TAB_REF = re.compile(r"\bTables?\s+(\d+)", re.I)
+FIG_REF = re.compile(r"(?:\bFig(?:ure)?\.?\s*|图\s*)(\d+)", re.I)
+CAP_FIG = re.compile(r"^\s*(?:Fig(?:ure)?\.?\s*|图\s*)(\d+)[.．:：]?", re.I)
+TAB_REF = re.compile(r"(?:\bTables?\s+|表\s*)([0-9]+|[A-Z]\d+)", re.I)
 
 RENAME = re.compile(
     r"(?:here it is written|written as|denoted|labelled|labeled|referred to as)"
@@ -108,18 +113,31 @@ def load(path):
     tbl_elems = [el for el in body.iterchildren() if el.tag == qn("w:tbl")]
     tables = []
     for i, el in enumerate(tbl_elems):
-        cap, sib, steps = None, el.getnext(), 0
+        t = d.tables[i]
+        # 1-row borderless tables are equation-layout tables, not data tables.
+        if len(t.rows) == 1 and sum(1 for c in t.rows[0].cells if c.text.strip()) <= 1:
+            continue
+        cap = None
+        # Captions may sit above (Chinese reports) or below (lab-notebook style).
+        sib, steps = el.getprevious(), 0
         while sib is not None and steps < 4:
             if sib.tag != qn("w:p"):
                 break
-            txt = "".join(sib.itertext()).strip()
-            m = re.match(r"Table\s+(\d+)\.", txt)
-            if m:
-                cap = int(m.group(1))
+            cap = caption_number("".join(sib.itertext()).strip())
+            if cap:
                 break
             steps += 1
-            sib = sib.getnext()
-        t = d.tables[i]
+            sib = sib.getprevious()
+        if cap is None:
+            sib, steps = el.getnext(), 0
+            while sib is not None and steps < 4:
+                if sib.tag != qn("w:p"):
+                    break
+                cap = caption_number("".join(sib.itertext()).strip())
+                if cap:
+                    break
+                steps += 1
+                sib = sib.getnext()
         grid = [[clean(c.text).strip() for c in r.cells] for r in t.rows]
         tables.append((cap, grid))
     return d, paras, tables
@@ -260,16 +278,16 @@ def main(path, max_claims):
     for cap, grid in tables:
         head = " | ".join(c for c in (grid[0] if grid else []) if c)
         by_num[cap] = " ".join(" ".join(r) for r in grid)
-        print("    %-8s %s" % (("Table %d" % cap) if cap else "cover", head[:110]))
+        print("    %-8s %s" % (("Table %s" % cap) if cap else "cover", head[:110]))
     flags = []
     for s in sents:
-        for m in re.finditer(r"of\s+Table\s+(\d+)", s):
-            n = int(m.group(1))
+        for m in re.finditer(r"(?:of\s+Table|表)\s*([0-9]+|[A-Z]\d+)", s):
+            n = m.group(1)
             frag = s[max(0, m.start() - 45):m.start()]
             greek = set(GREEK_RE.findall(frag))
             miss = [g for g in greek if g not in by_num.get(n, "")]
             if miss:
-                flags.append("Table %d is cited for %s, but %s does not appear in it: %s"
+                flags.append("Table %s is cited for %s, but %s does not appear in it: %s"
                              % (n, "".join(miss), "".join(miss), s[:120]))
     for f in flags:
         print("    CROSS-REF: %s" % f)
@@ -286,7 +304,7 @@ def main(path, max_claims):
     n_images = max(images, drawings)
     fig_refs = sorted({int(m.group(1)) for m in FIG_REF.finditer(body)})
     fig_caps = sorted({int(m.group(1)) for p in paras for m in CAP_FIG.finditer(p)})
-    tab_refs = sorted({int(m.group(1)) for m in TAB_REF.finditer(body)})
+    tab_refs = sorted({m.group(1) for m in TAB_REF.finditer(body)})
     caps = sorted({c for c, _ in tables if c})
     print("    images %d | figure refs %s | figure captions %s"
           % (n_images, fig_refs or "-", fig_caps or "-"))

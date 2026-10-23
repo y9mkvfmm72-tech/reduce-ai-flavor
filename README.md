@@ -111,18 +111,46 @@ python scripts/pdftext.py input.pdf [output.txt]
 
 ---
 
+## v1.3 更新（2026-10-23）
+
+这一版主要修“真实报告上的误报”，并补了一份实验报告案例。
+
+**修了 8 类误报**
+
+- 公式排版表被算成“无题注表”：`content_tables()` 跳过 1 行无边框表。
+- 中文“表 1 / 图 1”认不出：题注/引用正则增加中文，支持 A1/A2。
+- 题注被算成加粗引导：以 `Table/Figure/表/图` 开头的段落不计。
+- 中文“我”不计第一人称：增加 `我(?:们)?`。
+- 编号步骤被当成镜像段：跳过 `^\d+[.、]`，少于 3 句的段不参与。
+- 小写 `only` 触发假倒装：倒装正则改为大小写敏感。
+- `TimesNewRomanPS-BoldMT` 被拆成 `TimesNew`：字体名归一化修正。
+- 页脚“标题 + 页码”不算页码：`is_page_number_line()` 识别；排除 `Table 2`。
+
+**三处精度改进**：表头加粗不计入正文加粗；12 pt 节标题不计入；`OpenSymbol` 归为数学字体。
+
+**新增**
+
+- `tests/test_smoke.py`：16 个用例，锁住上面的行为。
+- `SKILL.md §15`：实验报告专用清单 + 密立根油滴报告实测。
+
+实测（同一份中英双版实验报告）：段首加粗 14→0，分号 9→3 / 21→5，第一人称 0→3 / 1→18，[6] 10 表 0 题注 → 4 表 4 题注，8.2 5 字体名 → 2 家族 + 数学字体，8.4 1/5 → 5/5。
+
+---
+
 ## 目录结构
 
 ```
 reduce-ai-flavor/
 ├── SKILL.md                  # 主体：八层诊断、文类路由、改写配方、HTML→PDF 重排配方、陷阱表、交付清单
-└── scripts/
-    ├── flavor_audit.py       # 像不像模型写的（1–7 层）
-    ├── layout_audit.py       # 版式像不像模板/网页导出（第 8 层，读 PDF 或 HTML）
-    ├── consistency.py        # 断言与表格/图是否闭合（第 6 层）
-    ├── overlap.py            # 与参考稿的相似度
-    ├── docxfallback.py       # 无 python-docx 时的标准库 docx 读取
-    └── pdftext.py            # 无依赖 PDF 取文
+├── scripts/
+│   ├── flavor_audit.py       # 像不像模型写的（1–7 层）
+│   ├── layout_audit.py       # 版式像不像模板/网页导出（第 8 层，读 PDF 或 HTML）
+│   ├── consistency.py        # 断言与表格/图是否闭合（第 6 层）
+│   ├── overlap.py            # 与参考稿的相似度
+│   ├── docxfallback.py       # 无 python-docx 时的标准库 docx 读取
+│   └── pdftext.py            # 无依赖 PDF 取文
+└── tests/
+    └── test_smoke.py         # v1.3 误报回归（16 个用例）
 ```
 
 `SKILL.md` 是主体，脚本只是量尺。先读第 0 节判场景，别上来就跑脚本。
